@@ -5,6 +5,10 @@ three cache levels (L1 → L2 → L3 → main memory), several replacement polic
 write policies, and reports hits, misses, evictions, writebacks, and **AMAT**
 (Average Memory Access Time).
 
+> **New:** [CODE_WALKTHROUGH.md](CODE_WALKTHROUGH.md) explains every file and
+> function, traces one address from `main()` to main memory, and shows how AMAT
+> is computed. Read it if you need to explain or extend the code.
+
 ---
 
 ## 1. What was configured on this machine

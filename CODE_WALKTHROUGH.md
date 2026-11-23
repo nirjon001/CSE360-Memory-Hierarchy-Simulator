@@ -68,9 +68,10 @@ together. `main.c` owns everything.
 | `src/trace.c` | Loads trace files or generates synthetic workloads; grows an array with `realloc`. |
 | `src/main.c` | `main()`, CLI parsing, the simulation loop, the comparison demo, and final reporting. |
 | `include/sim_runner.h`, `src/sim_runner.c` | Thin shared layer: build hierarchy from specs, step one access with per-level HIT/MISS, run a trace with a callback, expose read-only snapshots. |
-| `gui/main.cpp` | Dear ImGui + SDL3 front-end: controls, animated hierarchy, stats, latency plot, access log, set/way heatmap. |
-| `third_party/imgui/` | Vendored Dear ImGui 1.93.0 subset + MIT licence (no network needed to build). |
-| `CMakeLists.txt` | Builds `sim_core`, `sim_cli` and `sim_gui`. |
+| `gui/main.cpp` | Raylib front-end: six-tier pyramid dashboard, hit/progress bars, glowing request dot, AMAT metrics, preset dropdown, what-if sliders, reset button. |
+| `gui/imgui_main.cpp` | Previous Dear ImGui + SDL3 dashboard, kept as the optional `sim_gui_imgui` target. |
+| `third_party/imgui/` | Vendored Dear ImGui 1.93.0 subset + MIT licence (only needed for `sim_gui_imgui`). |
+| `CMakeLists.txt` | Builds `sim_core`, `sim_cli`, `sim_gui` and optional `sim_gui_imgui`; fetches Raylib 5.5 via FetchContent. |
 | `Makefile`, `ROADMAP.md` | Legacy `gcc`/`make` path, and the project progress plan. |
 | `.vscode/*` | Tasks (build/run), launch configs (F5 debugging), IntelliSense include paths. |
 
@@ -694,7 +695,7 @@ drift slightly as the code changes.
 
 ---
 
-## 17. The two-front-end architecture (CMake + `sim_runner` + `sim_gui`)
+## 17. The multi-front-end architecture (CMake + `sim_runner` + two GUIs)
 
 ### Why a runner layer was needed
 
@@ -719,8 +720,10 @@ Those two jobs used to live inside `src/main.c`. They are now in
                    ┌──────────▼──────┐  ┌───▼────────────────┐
                    │     sim_cli      │  │      sim_gui       │
                    │ src/main.c      │  │ gui/main.cpp       │
-                   │ original output │  │ ImGui + SDL3 + GL  │
+                   │ original output │  │ Raylib pyramid     │
                    └─────────────────┘  └────────────────────┘
+                                           (optional: sim_gui_imgui
+                                            = gui/imgui_main.cpp)
 ```
 
 Key detail: the three original `.c` files are compiled with the **C++ compiler**
@@ -753,21 +756,31 @@ geometry and counters from each `Cache` into a plain `SimLevelSnapshot` struct.
 The heatmap reads `c->sets[s][w]` directly (valid / dirty / timestamps), which is
 why `CacheLine` is exposed in `cache.h`.
 
-### GUI event flow
+### Raylib GUI event flow
 
 ```
-SDL3 event → ImGui_ImplSDL3_ProcessEvent
-           → buttons set flags in AppState
-           → build_trace() / rebuild_system() / step_once() / run_all()
-           → sim_runner → sim_core (same math as CLI)
-           → ImGui draws counters, HIT/MISS colours, AMAT, plot, heatmap
-           → ImGui_ImplOpenGL3_RenderDrawData → SDL_GL_SwapWindow
+SDL/Wayland event → raylib PollInputEvents() (inside WindowShouldClose)
+                  → GetMousePosition() + IsMouseButtonPressed/KeyDown
+                  → play/pause, preset choice, slider drag, reset
+                  → build_hierarchy() / apply_preset() / step_once()
+                  → sim_runner → sim_core (same math as CLI)
+                  → raylib draws pyramid, dot, metrics, card
+                  → BeginDrawing() / EndDrawing() swap the framebuffer
 ```
 
-`Play` simply calls `step_once()` repeatedly at `speed` accesses per second,
-using `io.DeltaTime` as the clock. `Run all` loops until the trace cursor reaches
-the end. `Build / Reset` destroys the old `Hierarchy` (freeing its `sets[][]`)
-and constructs a fresh one, so every run starts cold.
+`Play` calls `step_once()` at `speed` requests per second using `GetFrameTime()`
+as the clock. Each step sets `dot.target` to the first modelled level that hit
+(L1→1, L2→2, L3→3) or to Main RAM (4) when every cache missed. The dot's `t`
+is eased with `1-(1-t)^3` over 0.45 s, and the target trapezoid is lightened
+while `flash` decays.
+
+The six tiers are a *presentation* of the model: hit rates for L1–L3 come from
+`sim_snapshot()`; Registers and SSD are 0% because the trace contains memory
+references and paging is not modelled; Main RAM shows the fraction of requests
+that missed every cache. `AMAT(ns)` is computed from the six displayed latencies
+and reach probabilities. Dragging a slider sets `follow[i] = false`, which
+switches that tier from measured to what-if data; **Reset Statistics** calls
+`hierarchy_reset()` and re-attaches all three sliders.
 
 ### Build targets
 
@@ -775,13 +788,17 @@ and constructs a fresh one, so every run starts cold.
 | --- | --- | --- |
 | `sim_core` | `src/cache.c`, `hierarchy.c`, `trace.c`, `sim_runner.c` | STATIC library, shared core |
 | `sim_cli` | `src/main.c` + `sim_core` | original terminal simulator |
-| `sim_gui` | `gui/main.cpp` + vendored ImGui + `sim_core`, links SDL3/OpenGL | visual simulator |
+| `sim_gui` | `gui/main.cpp` + `sim_core` + Raylib 5.5 (FetchContent) | pyramid dashboard |
+| `sim_gui_imgui` | `gui/imgui_main.cpp` + vendored ImGui + SDL3/OpenGL | previous dashboard, opt-in |
 
 ```bash
 cmake -S . -B build -G Ninja
 cmake --build build
 ./build/bin/sim_cli --demo
 ./build/bin/sim_gui
+cmake -S . -B build -DBUILD_IMGUI_GUI=ON   # adds sim_gui_imgui
 ```
 
-`BUILD_GUI=OFF` skips the graphical target if SDL3/OpenGL are unavailable.
+`BUILD_GUI=OFF` skips the Raylib target. On Wayland-only systems CMake forces
+GLFW's Wayland backend; on X11 it leaves Raylib's defaults alone. The first
+configure needs network access to fetch Raylib unless it is already installed.

@@ -7,6 +7,7 @@ examples/hello
 build/
 cmake-build-*/
 imgui.ini
+sim_gui_raylib.png
 
 # --- Generated traces (keep the hand-written sample.trace) ---
 traces/random.trace

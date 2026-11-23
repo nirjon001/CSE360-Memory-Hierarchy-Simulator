@@ -142,35 +142,60 @@ Those last two numbers match when the model is correct.
 
 <a id="cmake"></a>
 
-## 🧱 Two front-ends, one core (CMake)
+## 🧱 Three executables, one core (CMake)
 
-`sim_cli` is the original terminal program. `sim_gui` is the new visual front-end.
-Both link the **same** `sim_core` library — `cache.c`, `hierarchy.c`, `trace.c`
-and the new thin `sim_runner.c` orchestration layer. The cache math and every
-terminal string are unchanged.
+`sim_cli` is the original terminal program. `sim_gui` is the new **Raylib**
+pyramid dashboard. The earlier ImGui dashboard is preserved as the optional
+`sim_gui_imgui`. All three link the **same** `sim_core` library — `cache.c`,
+`hierarchy.c`, `trace.c` and the thin `sim_runner.c` orchestration layer. The
+cache math and every terminal string are unchanged.
 
 ```bash
-cmake -S . -B build -G Ninja
+cmake -S . -B build -G Ninja    # fetches Raylib 5.5 on the first configure
 cmake --build build
 ./build/bin/sim_cli --demo      # byte-identical to the original ./memsim --demo
-./build/bin/sim_gui             # graphical simulator
+./build/bin/sim_gui             # Raylib pyramid dashboard
+./build/bin/sim_gui_imgui       # only with -DBUILD_IMGUI_GUI=ON
 ```
 
-Use `-DBUILD_GUI=OFF` to build only `sim_cli`. The legacy `make` → `./memsim`
-path still works as before.
+Raylib is pulled in with **CMake FetchContent** when it is not installed
+system-wide, so no package manager is needed. The first configure needs network
+access; later builds reuse `build/_deps`. On Wayland-only machines CMake selects
+GLFW's Wayland backend automatically. Use `-DBUILD_GUI=OFF` to skip Raylib or
+`-DBUILD_IMGUI_GUI=ON` to bring back the legacy dashboard. The old
+`make` → `./memsim` path still works too.
 
-### What the GUI shows
+### What the Raylib dashboard shows
 
-- Controls: L1/L2/L3 specs, memory latency, workload, trace file, and **Build /
-  Load / Run all / Step / Play / Reset** with a speed slider.
-- Animated **L1 → L2 → L3 → MEM** boxes that light up 🟢 HIT or 🔴 MISS.
-- Live per-level stats, big **AMAT (measured)** and **AMAT (formula)** cards,
-  a latency-per-access plot and a colour-coded access log.
-- A **set/way heatmap** of the selected cache level (blue = valid, orange =
-  dirty, yellow outline = last access).
+- **Top:** a six-tier pyramid of coloured trapezoids — Registers (dark red,
+  0.5 ns) → L1 (amber, 1 ns) → L2 (olive, 4 ns) → L3 (teal, 15 ns) → Main RAM
+  (slate blue, 80 ns) → SSD (indigo, 50 us). Each tier shows its live hit % with
+  a mini progress bar. A glowing yellow dot travels down the centre to the tier
+  that hit, and a circular **Play/Pause** button sits in the top right.
+- **Middle:** three centered metrics — **Avg Latency (AMAT, ns)**,
+  **Total Requests**, and **Cache Efficiency %** in green.
+- **Bottom:** a dark card with a **Workload Pattern Preset** dropdown
+  (Highly Localized / Sequential / Random), three L1/L2/L3 hit-rate sliders
+  and a **Reset Statistics** button in the bottom right.
 
-> Dear ImGui 1.93.0 is vendored in `third_party/imgui` (MIT licence) and uses the
-> SDL3 + OpenGL3 backend, so no network or package manager is needed to build.
+The sliders follow the measured hit rates until you drag one; that detaches it
+into a "what-if" mode and updates the AMAT immediately. **Reset Statistics**
+re-attaches them and zeroes all counters. `Space` steps, `P` toggles play,
+`→` steps once, `F2` saves a screenshot.
+
+| Pyramid tier | Live value comes from |
+|:---|:---|
+| Registers | 0% — a trace contains memory references, so all of them missed registers |
+| L1 / L2 / L3 | `sim_snapshot()` hit rates (or the what-if sliders) |
+| Main RAM | share of requests that missed every cache and terminate at memory |
+| SSD | 0% — paging is not modelled |
+
+AMAT is computed from these six displayed latencies and hit probabilities, so
+the number on screen always agrees with the pyramid. The cycle-based AMAT from
+the core is still printed by `sim_cli`.
+
+> The older ImGui + SDL3 dashboard lives in `gui/imgui_main.cpp` with ImGui
+> 1.93.0 vendored in `third_party/imgui` (MIT licence). It is opt-in.
 
 ---
 

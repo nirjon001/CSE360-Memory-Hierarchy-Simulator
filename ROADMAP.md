@@ -140,6 +140,33 @@ Decisions:
 
 ---
 
+## ✅ Phase 10 — Raylib pyramid dashboard
+
+**Goal:** replace the ImGui front-end with a six-tier visual pyramid, keeping
+`sim_cli` and the core untouched.
+
+Findings and decisions:
+
+- Raylib was not installed, but FetchContent works and a throwaway probe proved
+  that Raylib 5.5 + GLFW's Wayland backend opens a window in this sandbox.
+- `sim_gui` now uses Raylib; the ImGui version is preserved as the opt-in
+  `sim_gui_imgui` target (`-DBUILD_IMGUI_GUI=ON`).
+- Raylib is fetched with FetchContent at configure time; CMake clears the stale
+  `OPENGL_VERSION` cache entry that the old ImGui probe left behind.
+- Pyramid: Registers / L1 / L2 / L3 / RAM / SSD with the requested colours and
+  latencies, live hit % bars, glowing travel dot, circular Play/Pause button.
+- Middle metrics: AMAT (ns from the six tiers), total requests, cache efficiency.
+- Bottom card: workload preset dropdown, three what-if hit-rate sliders,
+  Reset Statistics button.
+
+- [x] Add `gui/main.cpp` Raylib dashboard; move ImGui GUI to `gui/imgui_main.cpp`.
+- [x] Update CMake for FetchContent + both GUI targets + Wayland detection.
+- [x] Verify rendering (all six trapezoid colours, dot, card widgets present).
+- [x] Confirm `sim_cli` and legacy `make` output still byte-identical.
+- [x] Document the new dashboard in README / CODE_WALKTHROUGH.
+
+---
+
 ## ⬜ Phase 9 — Nice-to-have follow-ups (not committed yet)
 
 - Docking / layout persistence in the GUI.
@@ -150,6 +177,6 @@ Decisions:
 
 ---
 
-**Current status:** Phases 0–8 complete. `sim_cli` and `sim_gui` both build from
-the same `sim_core`; the terminal output is unchanged. Phase 9 is a backlog of
-optional enhancements — pick one when you want to extend the project further.
+**Current status:** Phases 0–8 and 10 complete. `sim_cli`, Raylib `sim_gui` and
+optional `sim_gui_imgui` all build from the same `sim_core`; terminal output is
+unchanged. Phase 9 is a backlog of optional enhancements.

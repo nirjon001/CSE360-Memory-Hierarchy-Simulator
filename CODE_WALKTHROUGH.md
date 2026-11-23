@@ -67,7 +67,11 @@ together. `main.c` owns everything.
 | `include/trace.h` | Defines `TraceEntry`, `Trace`, `GenKind`, and the trace API. |
 | `src/trace.c` | Loads trace files or generates synthetic workloads; grows an array with `realloc`. |
 | `src/main.c` | `main()`, CLI parsing, the simulation loop, the comparison demo, and final reporting. |
-| `Makefile` | `gcc` compile rules; `all`, `debug`, `run`, `demo`, `test`, `clean`. |
+| `include/sim_runner.h`, `src/sim_runner.c` | Thin shared layer: build hierarchy from specs, step one access with per-level HIT/MISS, run a trace with a callback, expose read-only snapshots. |
+| `gui/main.cpp` | Dear ImGui + SDL3 front-end: controls, animated hierarchy, stats, latency plot, access log, set/way heatmap. |
+| `third_party/imgui/` | Vendored Dear ImGui 1.93.0 subset + MIT licence (no network needed to build). |
+| `CMakeLists.txt` | Builds `sim_core`, `sim_cli` and `sim_gui`. |
+| `Makefile`, `ROADMAP.md` | Legacy `gcc`/`make` path, and the project progress plan. |
 | `.vscode/*` | Tasks (build/run), launch configs (F5 debugging), IntelliSense include paths. |
 
 The build pipeline is simply:
@@ -685,3 +689,99 @@ drift slightly as the code changes.
 4. `src/hierarchy.c` → `hierarchy_init()` and `hierarchy_access()` — see the wiring.
 5. `src/cache.c` → `cache_access()` — the actual hardware model.
 6. `src/hierarchy.c` → `level_amat()` — the theory that matches the measurements.
+7. `include/sim_runner.h` + `gui/main.cpp` — how a second front-end reuses the
+   exact same core without changing a single cache equation (see §17).
+
+---
+
+## 17. The two-front-end architecture (CMake + `sim_runner` + `sim_gui`)
+
+### Why a runner layer was needed
+
+`cache.c`, `hierarchy.c` and `trace.c` were already clean header/source pairs,
+so they were **not rewritten**. What was missing was a front-end-neutral way to:
+
+1. turn the three `-l1/-l2/-l3` strings into a `Hierarchy`, and
+2. advance exactly one access and report what each level did.
+
+Those two jobs used to live inside `src/main.c`. They are now in
+`sim_runner.h/.c`, so the terminal and graphical programs share them.
+
+### The new dependency graph
+
+```
+                       ┌────────────────────────────┐
+                       │         sim_core           │
+                       │  cache.c hierarchy.c      │
+                       │  trace.c  sim_runner.c     │
+                       └──────┬─────────────┬───────┘
+                              │             │
+                   ┌──────────▼──────┐  ┌───▼────────────────┐
+                   │     sim_cli      │  │      sim_gui       │
+                   │ src/main.c      │  │ gui/main.cpp       │
+                   │ original output │  │ ImGui + SDL3 + GL  │
+                   └─────────────────┘  └────────────────────┘
+```
+
+Key detail: the three original `.c` files are compiled with the **C++ compiler**
+via CMake's `LANGUAGE CXX` source property. They were verified to compile under
+C++17 with zero changes, so no `extern "C"` wrappers or source edits were needed.
+
+### `sim_step()` — how the GUI gets per-level hit/miss
+
+`hierarchy_access()` deliberately returns `void`, so `sim_step()` snapshots every
+level's `accesses` and `hits` counters immediately before and after the call:
+
+```c
+before_acc[i] = h->levels[i].accesses;
+before_hit[i] = h->levels[i].hits;
+hierarchy_access(h, addr, is_write);
+info.reached[i] = (h->levels[i].accesses > before_acc[i]);
+info.hit[i]     = info.reached[i] && (h->levels[i].hits > before_hit[i]);
+info.latency    = h->total_cycles - cycles_before;
+```
+
+This gives the GUI the same information the `-v` flag uses in the CLI, without
+changing the core API. `sim_cli` now calls `sim_step()` too, so both front-ends
+walk the identical path. The demo output was verified byte-for-byte against the
+pre-refactor `./memsim --demo`.
+
+### `sim_snapshot()` — how the GUI reads statistics
+
+Instead of parsing printed text, the GUI calls `sim_snapshot()` which copies
+geometry and counters from each `Cache` into a plain `SimLevelSnapshot` struct.
+The heatmap reads `c->sets[s][w]` directly (valid / dirty / timestamps), which is
+why `CacheLine` is exposed in `cache.h`.
+
+### GUI event flow
+
+```
+SDL3 event → ImGui_ImplSDL3_ProcessEvent
+           → buttons set flags in AppState
+           → build_trace() / rebuild_system() / step_once() / run_all()
+           → sim_runner → sim_core (same math as CLI)
+           → ImGui draws counters, HIT/MISS colours, AMAT, plot, heatmap
+           → ImGui_ImplOpenGL3_RenderDrawData → SDL_GL_SwapWindow
+```
+
+`Play` simply calls `step_once()` repeatedly at `speed` accesses per second,
+using `io.DeltaTime` as the clock. `Run all` loops until the trace cursor reaches
+the end. `Build / Reset` destroys the old `Hierarchy` (freeing its `sets[][]`)
+and constructs a fresh one, so every run starts cold.
+
+### Build targets
+
+| Target | Sources | What it is |
+| --- | --- | --- |
+| `sim_core` | `src/cache.c`, `hierarchy.c`, `trace.c`, `sim_runner.c` | STATIC library, shared core |
+| `sim_cli` | `src/main.c` + `sim_core` | original terminal simulator |
+| `sim_gui` | `gui/main.cpp` + vendored ImGui + `sim_core`, links SDL3/OpenGL | visual simulator |
+
+```bash
+cmake -S . -B build -G Ninja
+cmake --build build
+./build/bin/sim_cli --demo
+./build/bin/sim_gui
+```
+
+`BUILD_GUI=OFF` skips the graphical target if SDL3/OpenGL are unavailable.

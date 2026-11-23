@@ -5,7 +5,7 @@ LDFLAGS ?=
 INCLUDES = -Iinclude
 
 TARGET = memsim
-SRCS   = src/cache.c src/hierarchy.c src/trace.c src/main.c
+SRCS   = src/cache.c src/hierarchy.c src/trace.c src/sim_runner.c src/main.c
 OBJS   = $(SRCS:.c=.o)
 
 .PHONY: all debug clean run demo test help

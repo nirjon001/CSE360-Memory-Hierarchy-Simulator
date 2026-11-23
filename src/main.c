@@ -1,5 +1,6 @@
 #include "cache.h"
 #include "hierarchy.h"
+#include "sim_runner.h"
 #include "trace.h"
 
 #include <inttypes.h>
@@ -12,8 +13,6 @@
 #define DEFAULT_BASE   0x10000000ULL
 #define DEFAULT_MEM    100u
 #define VERBOSE_LIMIT  12
-
-static const uint32_t default_hits[MAX_LEVELS] = { 1, 10, 30 };
 
 typedef struct {
     const char *l1;
@@ -84,41 +83,22 @@ static int parse_u64(const char *s, uint64_t *out)
 static int build_hierarchy(Hierarchy *h, const char *const *specs,
                            int nlevels, uint32_t mem_latency)
 {
-    LevelConfig cfgs[MAX_LEVELS];
-    for (int i = 0; i < nlevels; i++) {
-        if (hierarchy_parse_level(specs[i], default_hits[i], &cfgs[i]) != 0) {
-            fprintf(stderr, "Invalid cache specification: %s\n", specs[i]);
-            return -1;
-        }
-    }
-    if (hierarchy_init(h, cfgs, nlevels, mem_latency) != 0) {
-        fprintf(stderr, "Failed to initialise the memory hierarchy.\n");
-        return -1;
-    }
-    return 0;
+    /* sim_runner derives nlevels from which spec strings are present. */
+    (void)nlevels;
+    return sim_build_hierarchy(h, specs[0], specs[1], specs[2], mem_latency);
 }
 
 static void run_trace(Hierarchy *h, const Trace *t, int verbose)
 {
     for (size_t i = 0; i < t->count; i++) {
-        uint64_t prev_acc[MAX_LEVELS], prev_hit[MAX_LEVELS];
-        if (verbose && i < VERBOSE_LIMIT) {
-            for (int l = 0; l < h->nlevels; l++) {
-                prev_acc[l] = h->levels[l].accesses;
-                prev_hit[l] = h->levels[l].hits;
-            }
-        }
-
-        hierarchy_access(h, t->items[i].addr, t->items[i].is_write);
+        SimStepInfo info = sim_step(h, t->items[i].addr, t->items[i].is_write);
 
         if (verbose && i < VERBOSE_LIMIT) {
             printf("  %2zu: 0x%08" PRIx64 " %c  -> ", i, t->items[i].addr,
                    t->items[i].is_write ? 'W' : 'R');
             for (int l = 0; l < h->nlevels; l++) {
-                int reached = (h->levels[l].accesses > prev_acc[l]);
                 printf("%s:%s  ", h->levels[l].name,
-                       !reached ? "---" :
-                       (h->levels[l].hits > prev_hit[l] ? "HIT" : "MISS"));
+                       !info.reached[l] ? "---" : (info.hit[l] ? "HIT" : "MISS"));
             }
             printf("\n");
         }

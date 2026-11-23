@@ -4,6 +4,9 @@
 memsim
 memsim_cpp
 examples/hello
+build/
+cmake-build-*/
+imgui.ini
 
 # --- Generated traces (keep the hand-written sample.trace) ---
 traces/random.trace

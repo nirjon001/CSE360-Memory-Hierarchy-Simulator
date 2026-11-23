@@ -29,7 +29,7 @@
 
 <br>
 
-| 🚀 [Quick start](#quick-start) | 🖥️ [VS Code setup](#vscode) | 🎮 [Run commands](#cli) | 🧮 [Theory](#theory) | 🔬 [Experiments](#experiments) |
+| 🚀 [Quick start](#quick-start) | 🧱 [CMake + GUI](#cmake) | 🖥️ [VS Code setup](#vscode) | 🎮 [Run commands](#cli) | 🧮 [Theory](#theory) | 🔬 [Experiments](#experiments) | 🗺️ [Roadmap](ROADMAP.md) |
 |:---:|:---:|:---:|:---:|:---:|
 
 </div>
@@ -90,6 +90,7 @@ deliberate simplifications for your report.
 
 > 📖 **New here?** Start with [CODE_WALKTHROUGH.md](CODE_WALKTHROUGH.md) — it explains every
 > function and follows one address all the way from `main()` to main memory.
+> 🗺️ See [ROADMAP.md](ROADMAP.md) for where the project came from and what is next.
 
 ---
 
@@ -136,6 +137,40 @@ Those last two numbers match when the model is correct.
                       │  MAIN MEMORY     │  100 cycles ⏳
                       └──────────────────┘
 ```
+
+---
+
+<a id="cmake"></a>
+
+## 🧱 Two front-ends, one core (CMake)
+
+`sim_cli` is the original terminal program. `sim_gui` is the new visual front-end.
+Both link the **same** `sim_core` library — `cache.c`, `hierarchy.c`, `trace.c`
+and the new thin `sim_runner.c` orchestration layer. The cache math and every
+terminal string are unchanged.
+
+```bash
+cmake -S . -B build -G Ninja
+cmake --build build
+./build/bin/sim_cli --demo      # byte-identical to the original ./memsim --demo
+./build/bin/sim_gui             # graphical simulator
+```
+
+Use `-DBUILD_GUI=OFF` to build only `sim_cli`. The legacy `make` → `./memsim`
+path still works as before.
+
+### What the GUI shows
+
+- Controls: L1/L2/L3 specs, memory latency, workload, trace file, and **Build /
+  Load / Run all / Step / Play / Reset** with a speed slider.
+- Animated **L1 → L2 → L3 → MEM** boxes that light up 🟢 HIT or 🔴 MISS.
+- Live per-level stats, big **AMAT (measured)** and **AMAT (formula)** cards,
+  a latency-per-access plot and a colour-coded access log.
+- A **set/way heatmap** of the selected cache level (blue = valid, orange =
+  dirty, yellow outline = last access).
+
+> Dear ImGui 1.93.0 is vendored in `third_party/imgui` (MIT licence) and uses the
+> SDL3 + OpenGL3 backend, so no network or package manager is needed to build.
 
 ---
 

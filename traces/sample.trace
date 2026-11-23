@@ -1,0 +1,26 @@
+# Small hand-written trace for experimenting with cache configurations
+# Format: <address> [R|W]   (addresses may be decimal or 0x hex)
+#
+# Repeated addresses demonstrate hits; the 2 KiB jumps cause conflict misses
+# in small direct-mapped caches.
+
+0x10000000 R
+0x10000004 R
+0x10000008 R
+0x1000000c R
+0x10000010 R
+0x10000000 R
+0x10000004 R
+0x10000008 R
+0x1000000c W
+0x10000010 R
+0x10000800 R
+0x10001000 R
+0x10001800 R
+0x10000000 R
+0x10000800 R
+0x10001000 R
+0x10001800 R
+0x10000004 W
+0x10000004 R
+0x10000008 R

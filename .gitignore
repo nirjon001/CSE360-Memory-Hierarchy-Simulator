@@ -1,0 +1,16 @@
+# --- Build artefacts ---
+*.o
+*.obj
+memsim
+memsim_cpp
+examples/hello
+
+# --- Generated traces (keep the hand-written sample.trace) ---
+traces/random.trace
+traces/generated.trace
+
+# --- Editor / OS files ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
